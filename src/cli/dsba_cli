@@ -11,7 +11,10 @@ from pathlib import Path
 
 from dsba.data_ingestion import load_csv_from_path, write_csv_to_path
 from dsba.model_registry import list_models_ids, load_model, load_model_metadata
-from dsba.model_prediction import classify_dataframe
+from dsba.model_prediction import predict_five_day_average #New function for prediction
+
+#import yfiance
+import yfinance as yf
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,6 +43,14 @@ def create_parser():
     predict_parser.add_argument("--input", help="Input file path", required=True)
     predict_parser.add_argument("--output", help="Output file path", required=True)
 
+    # Analyze command (new)
+    analyze_parser = subparsers.add_parser("analyze", help="Analyze stock performance")
+    analyze_parser.add_argument("--company", help="Company name or stock code", required=True)
+    analyze_parser.add_argument("--shares", help="Number of shares owned", type=int, required=True)
+    analyze_parser.add_argument("--price", help="Acquisition price per share", type=float, required=True)
+    analyze_parser.add_argument("--min_gain", help="Minimum acceptable gain", type=float, required=True)
+    analyze_parser.add_argument("--expected_gain", help="Expected average gain", type=float, required=True)
+
     return parser
 
 
@@ -54,6 +65,10 @@ def main():
         list_models()
     elif args.command == "predict":
         predict(args.model, args.input, args.output)
+    elif args.command == "analyze":
+        analyze(args.company, args.shares, args.price, args.min_gain, args.expected_gain)
+
+
 
 
 # We create a few light wrappers around our platform functionalities, just collect inputs and print the results.
@@ -67,12 +82,56 @@ def list_models() -> None:
 
 
 def predict(model_id: str, input_file: str, output_file: str) -> None:
-    model = load_model(model_id)
-    metadata = load_model_metadata(model_id)
-    df = load_csv_from_path(input_file)
-    predictions = classify_dataframe(model, df, metadata.target_column)
-    write_csv_to_path(predictions, output_file)
-    print(f"Scored {len(predictions)} records")
+    """
+    Make predictions using a specified model."
+    """
+    try:
+        model = load_model(model_id)
+        metadata = load_model_metadata(model_id)
+        df = load_csv_from_path(input_file)
+        predictions = predict_five_day_average(model, df, metadata.target_column)
+        write_csv_to_path(predictions, output_file)
+        print(f"Predicted prices saved to {output_file}")
+    except Exception as e:
+        logging.error(f"Failed to make predictions: {e}")
+
+# New function for analyzing stock performance
+def analyze(company_code: str, num_shares: int, acquisition_price: float, min_gain: float, expected_gain: float) -> None:
+    """
+    Analyze stock performance and calculate potential gain.
+    """
+    try:
+        # Fetch historical stock data
+        stock_data = yf.download(company_code, period="1mo")  # Last month's data
+        historical_prices = stock_data["Close"].tolist()
+
+        # Load the model and metadata
+        model = load_model("arima_model")  # Example model ID
+        metadata = load_model_metadata("arima_model")
+
+        # Predict the next five working days' average price
+        predicted_avg_price = predict_five_day_average(model, historical_prices, metadata.target_column)
+
+        # Calculate potential gain
+        acquisition_cost = num_shares * acquisition_price
+        predicted_value = num_shares * predicted_avg_price
+        potential_gain = predicted_value - acquisition_cost
+
+        # Compare gain to user expectations
+        if potential_gain >= expected_gain:
+            recommendation = "Sell now"
+        elif potential_gain >= min_gain:
+            recommendation = "Consider selling"
+        else:
+            recommendation = "Hold"
+
+        # Print the results
+        print(f"Predicted average price (next 5 days): {predicted_avg_price:.2f}")
+        print(f"Potential gain: {potential_gain:.2f}")
+        print(f"Recommendation: {recommendation}")
+    except Exception as e:
+        logging.error(f"Error analyzing stock: {e}")
+
 
 
 if __name__ == "__main__":
