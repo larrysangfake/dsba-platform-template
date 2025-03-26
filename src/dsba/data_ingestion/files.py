@@ -1,23 +1,32 @@
-from io import StringIO
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
-import requests
 import pandas as pd
+import yfinance as yf
 
-
-def load_csv_from_path(filepath: str | Path) -> pd.DataFrame:
+def fetch_stock_data(stock_code: str, end_date: datetime = None) -> pd.DataFrame:
     """
-    Loads a CSV file on the local filesystem into a pandas DataFrame
-    Since it loads it all in memory, it is only suitable for datasets small enough to fit in memory
+    Fetch stock data up to a specific end date (default: yesterday).
+    - Uses post-2020 data only
+    - Automatically caches to data/raw/
     """
-    return pd.read_csv(filepath)
+    end_date = end_date or (datetime.now() - timedelta(days=1))
+    start_date = max(datetime(2021, 1, 1), end_date - timedelta(days=3*365))
+    
+    # Check cache first
+    raw_path = Path(f"data/raw/{stock_code}_{end_date.date()}.csv")
+    if raw_path.exists():
+        return pd.read_csv(raw_path)
+    
+    # Fetch from Yahoo Finance
+    data = yf.download(stock_code, start=start_date, end=end_date)
+    
+    # Cache the data
+    raw_path.parent.mkdir(exist_ok=True)
+    data.to_csv(raw_path)
+    return data
 
-
-def load_csv_from_url(url: str) -> pd.DataFrame:
-    response = requests.get(url)
-    response.raise_for_status()
-    return pd.read_csv(StringIO(response.text))
-
-
-def write_csv_to_path(df: pd.DataFrame, filepath: str | Path) -> None:
-    df.to_csv(filepath, index=False)
+def get_holdout_data(stock_code: str, days: int = 30) -> pd.DataFrame:
+    """Get the most recent [days] as holdout data"""
+    end_date = datetime.now() - timedelta(days=1)
+    start_date = end_date - timedelta(days=days)
+    return fetch_stock_data(stock_code, end_date=end_date).loc[start_date:end_date]
