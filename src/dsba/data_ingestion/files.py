@@ -10,7 +10,7 @@ def fetch_stock_data(stock_code: str, end_date: datetime = None) -> pd.DataFrame
     - Automatically caches to data/raw/
     """
     end_date = end_date or (datetime.now() - timedelta(days=1))
-    start_date = max(datetime(2021, 1, 1), end_date - timedelta(days=3*365))
+    start_date = max(datetime(2022, 1, 1), end_date - timedelta(days=3*365))
     
     # Check cache first
     raw_path = Path(f"data/raw/{stock_code}_{end_date.date()}.csv")
