@@ -18,7 +18,7 @@ def fetch_stock_data(stock_code: str, end_date: datetime = None) -> pd.DataFrame
         return pd.read_csv(raw_path)
     
     # Fetch from Yahoo Finance
-    data = yf.download(stock_code, start=start_date, end=end_date)
+    data = yf.download(stock_code, start=start_date, end=end_date, auto_adjust=False, multi_level_index=False)
     
     # Cache the data
     raw_path.parent.mkdir(exist_ok=True)
