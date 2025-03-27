@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
-def fetch_stock_data(stock_code: str, end_date: datetime = None) -> pd.DataFrame:
+def fetch_stock_data(stock_code: str, end_date: datetime = None) -> Path:
     """
     Fetch stock data up to a specific end date (default: yesterday).
     - Uses post-2020 data only
@@ -23,7 +23,7 @@ def fetch_stock_data(stock_code: str, end_date: datetime = None) -> pd.DataFrame
     # Cache the data
     raw_path.parent.mkdir(exist_ok=True)
     data.to_csv(raw_path)
-    return data
+    return raw_path
 
 def get_holdout_data(stock_code: str, days: int = 30) -> pd.DataFrame:
     """Get the most recent [days] as holdout data"""
