@@ -21,15 +21,13 @@ class ModelMetadata:
     last_train_date: str
 
 class ModelRegistry:
-    def __init__(self, registry_path: str = None):
-        """
-        Initialize model registry
+    def __init__(self, registry_path=None):
+        # Default to environment variable or local 'models' dir
+        self.registry_path = Path(registry_path or os.getenv("MODEL_REGISTRY_PATH", "models"))
         
-        Args:
-            registry_path: Optional custom path for model storage
-                         Defaults to STOCK_MODELS_PATH environment variable
-        """
-        self.registry_path = self._get_registry_path(registry_path)
+        # Convert to absolute path
+        if not self.registry_path.is_absolute():
+            self.registry_path = Path.cwd() / self.registry_path
         self.logger = logging.getLogger("model_registry")
 
     def save_model(self, model: BaseEstimator, metadata: ModelMetadata) -> None:
