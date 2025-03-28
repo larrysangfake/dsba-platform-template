@@ -1,79 +1,105 @@
-from dataclasses import dataclass
+# model_evaluation.py
 import pandas as pd
-from sklearn.base import BaseEstimator, ClassifierMixin
+import numpy as np
+from pathlib import Path
 from sklearn.metrics import (
     accuracy_score,
-    classification_report,
-    confusion_matrix,
-    f1_score,
     precision_score,
     recall_score,
+    f1_score,
+    confusion_matrix
 )
-import matplotlib.pyplot as plt
-import seaborn as sns
-from dsba.preprocessing import preprocess_dataframe, split_features_and_target
+import json
+import logging
+from typing import Dict, Any
 
+class StockModelEvaluator:
+    def __init__(self, stock_code: str):
+        self.stock_code = stock_code
+        self.logger = logging.getLogger(f"evaluator.{stock_code}")
 
-@dataclass
-class ClassifierEvaluationResult:
-    accuracy: float
-    precision: float
-    recall: float
-    f1_score: float
-    confusion_matrix: list[list[int]]
+    def _load_test_data(self, model_dir: Path) -> Dict[str, Any]:
+        """Load test data saved during training"""
+        test_data_path = model_dir / f"{self.stock_code}_test_data.csv"
+        if not test_data_path.exists():
+            raise FileNotFoundError(f"Test data missing for {self.stock_code}")
+        
+        test_df = pd.read_csv(test_data_path, parse_dates=['Date'])
+        return {
+            'dates': test_df['Date'].values,
+            'y_true': test_df['y_true'].values
+        }
 
+    def evaluate(self, model_dir: Path, predictions: np.ndarray) -> Dict[str, Any]:
+        """
+        Evaluate model performance
+        
+        Args:
+            model_dir: Path containing training artifacts
+            predictions: Model predictions on test data
+            
+        Returns:
+            Dictionary of evaluation metrics and metadata
+        """
+        try:
+            # Load ground truth
+            test_data = self._load_test_data(model_dir)
+            y_true = test_data['y_true']
+            
+            # Calculate metrics
+            metrics = {
+                'accuracy': accuracy_score(y_true, predictions),
+                'precision': precision_score(y_true, predictions),
+                'recall': recall_score(y_true, predictions),
+                'f1': f1_score(y_true, predictions),
+                'confusion_matrix': confusion_matrix(y_true, predictions).tolist(),
+                'evaluation_date': pd.Timestamp.now().isoformat(),
+                'test_date_range': {
+                    'start': pd.to_datetime(test_data['dates'].min()).strftime('%Y-%m-%d'),
+                    'end': pd.to_datetime(test_data['dates'].max()).strftime('%Y-%m-%d')
+                }
+            }
+            
+            # Load training metadata
+            with open(model_dir / f"{self.stock_code}_train_metadata.json") as f:
+                metadata = json.load(f)
+            
+            # Merge with evaluation results
+            full_report = {
+                'stock_code': self.stock_code,
+                'training_metadata': metadata,
+                'evaluation_metrics': metrics,
+                'model_path': str(model_dir / f"{self.stock_code}_model.pkl")
+            }
+            
+            # Save evaluation report
+            eval_path = model_dir / f"{self.stock_code}_evaluation.json"
+            with open(eval_path, 'w') as f:
+                json.dump(full_report, f, indent=2)
+                
+            return full_report
+            
+        except Exception as e:
+            self.logger.error(f"Evaluation failed for {self.stock_code}: {str(e)}")
+            raise
 
-def evaluate_classifier(
-    classifier: ClassifierMixin, target_column: str, df: pd.DataFrame
-) -> ClassifierEvaluationResult:
-    df = preprocess_dataframe(df)
-    X, y_actual = split_features_and_target(df, target_column)
-    y_predicted = classifier.predict(X)
-
-    accuracy = accuracy_score(y_actual, y_predicted)
-    precision = precision_score(
-        y_actual, y_predicted, average="weighted", zero_division=0
-    )
-    recall = recall_score(y_actual, y_predicted, average="weighted", zero_division=0)
-    f1 = f1_score(y_actual, y_predicted, average="weighted", zero_division=0)
-    conf_matrix = confusion_matrix(y_actual, y_predicted)
-
-    return ClassifierEvaluationResult(
-        accuracy=accuracy,
-        precision=precision,
-        recall=recall,
-        f1_score=f1,
-        confusion_matrix=conf_matrix,
-    )
-
-
-# Display functions :
-
-
-def visualize_classification_evaluation(result: ClassifierEvaluationResult):
-    confusion_maxtrix_fig = plot_confusion_matrix(result)
-    plt.show(confusion_maxtrix_fig)
-    evaluation_metrics_fig = plot_classification_metrics(result)
-    plt.show(evaluation_metrics_fig)
-
-
-def plot_confusion_matrix(result: ClassifierEvaluationResult) -> plt.Figure:
-    confusion_matrix_df = pd.DataFrame(result.confusion_matrix)
-    fig, ax = plt.subplots(figsize=(6, 6))
-    sns.heatmap(confusion_matrix_df, annot=True, fmt="d", cmap="Blues", ax=ax)
-    ax.set_title("Confusion Matrix")
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("Actual")
-    return fig
-
-
-def plot_classification_metrics(result: ClassifierEvaluationResult) -> plt.Figure:
-    metrics = ["accuracy", "precision", "recall", "f1_score"]
-    scores = [result.accuracy, result.precision, result.recall, result.f1_score]
-    metric_data = pd.DataFrame({"Metric": metrics, "Score": scores})
-    fig, ax = plt.subplots(figsize=(6, 6))
-    sns.barplot(data=metric_data, x="Metric", y="Score", ax=ax)
-    ax.set_ylim(0, 1)
-    ax.set_title("Classification Metrics")
-    ax.set_ylabel("Score")
-    return fig
+def evaluate_model(stock_code: str, model_dir: Path, predictions: np.ndarray) -> bool:
+    """
+    Pipeline integration point
+    
+    Args:
+        stock_code: Stock ticker symbol
+        model_dir: Directory containing model artifacts
+        predictions: Model predictions on test data
+        
+    Returns:
+        bool: True if evaluation succeeded
+    """
+    try:
+        evaluator = StockModelEvaluator(stock_code)
+        report = evaluator.evaluate(model_dir, predictions)
+        logging.info(f"Evaluation completed for {stock_code}: {report['evaluation_metrics']}")
+        return True
+    except Exception as e:
+        logging.error(f"Evaluation failed for {stock_code}: {str(e)}")
+        return False
