@@ -8,7 +8,7 @@ from typing import Dict, Tuple
 
 class StockPreprocessor:
     def __init__(self, 
-                 stock_code: str
+                 stock_code: str,
                  prediction_horizon: int = 1,  # Predict the next trading day
                  test_size: float = 0.2,
                  holdout_days: int = 30):
@@ -23,88 +23,96 @@ class StockPreprocessor:
         self.test_size = test_size
         self.holdout_days = holdout_days
         self.scaler = RobustScaler()
-        self.feature_columns = None
+        self.feature_columns: List[str] = []
+        self.logger = logging.getLogger(f"preprocessor.{stock_code}")
 
     def _create_target(self, df: pd.DataFrame) -> pd.DataFrame:
         """Create target variable for classification"""
+        if 'Close' not in df.columns:
+            raise ValueError("Missing 'Close' column for target creation")
+            
         df = df.copy()
-        # Binary target: 1 if price increases within horizon
         df['target'] = (
             df['Close'].shift(-self.prediction_horizon) > df['Close']
         ).astype(int)
-        return df
+        return df.dropna()
 
     def _temporal_split(self, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
-        """Time-aware data splitting"""
-        # Holdout set (most recent data)
-        holdout = df.iloc[-self.holdout_days:]
+        """Time-aware data splitting with length checks"""
+        total_samples = len(df)
+        required = self.holdout_days + int(total_samples * self.test_size) + 10
+        if total_samples < required:
+            raise ValueError(f"Need at least {required} samples, got {total_samples}")
         
-        # Test set (before holdout)
-        test_size = int(len(df) * self.test_size)
-        test = df.iloc[-(self.holdout_days + test_size):-self.holdout_days]
-        
-        # Training data (the rest)
-        train = df.iloc[:-(self.holdout_days + test_size)]
+        # Split indices
+        holdout_start = -self.holdout_days
+        test_start = holdout_start - int(total_samples * self.test_size)
         
         return {
-            'train': train,
-            'test': test,
-            'holdout': holdout
+            'train': df.iloc[:test_start],
+            'test': df.iloc[test_start:holdout_start],
+            'holdout': df.iloc[holdout_start:]
         }
 
     def process(self, features_path: Path) -> Dict:
-        """
-        Main preprocessing pipeline
-        
-        Returns:
-            {
-                'X_train': scaled training features,
-                'y_train': training targets,
-                'X_test': scaled test features,
-                'y_test': test targets,
-                'X_holdout': holdout features (unscaled),
-                'y_holdout': holdout targets,
-                'feature_names': list of feature names,
-                'monte_carlo_data': raw data needed for simulations
-            }
-        """
-        # Load and prepare data
+        """Main preprocessing pipeline with validation"""
         df = pd.read_csv(features_path, parse_dates=['Date'], index_col='Date')
-        df = self._create_target(df)
+        df = df.sort_index().asfreq('D')  # Ensure daily frequency
         
-        # Temporal split
+        # Validate core columns
+        required_cols = {'Close', 'Volume', 'High', 'Low'}
+        if not required_cols.issubset(df.columns):
+            missing = required_cols - set(df.columns)
+            raise ValueError(f"Missing required columns: {missing}")
+            
+        df = self._create_target(df)
         splits = self._temporal_split(df)
         
-        # Identify feature columns (exclude targets and raw prices)
+        # Feature selection
         self.feature_columns = [
             col for col in df.columns 
             if col.startswith(('ma_', 'close_ratio_', 'volatility_', 'volume_'))
+            and col != 'target'
         ]
         
-        # Scale features
-        X_train = self.scaler.fit_transform(splits['train'][self.feature_columns])
-        X_test = self.scaler.transform(splits['test'][self.feature_columns])
-        
-        # Prepare Monte Carlo data (unscaled)
-        mc_data = splits['holdout'][['Close', 'Log_Return', 'Market_State']]
-        
+        # Scaling
+        self.scaler.fit(splits['train'][self.feature_columns])
         return {
-            'X_train': X_train,
+            'X_train': self.scaler.transform(splits['train'][self.feature_columns]),
             'y_train': splits['train']['target'].values,
-            'X_test': X_test,
+            'X_test': self.scaler.transform(splits['test'][self.feature_columns]),
             'y_test': splits['test']['target'].values,
             'X_holdout': splits['holdout'][self.feature_columns].values,
             'y_holdout': splits['holdout']['target'].values,
             'feature_names': self.feature_columns,
-            'monte_carlo_data': mc_data
+            'monte_carlo_data': splits['holdout'][['Close', 'Log_Return']]  # Removed Market_State
         }
 
+    def transform(self, live_data: pd.DataFrame) -> np.ndarray:
+        """Production data transformation"""
+        self._validate_features(live_data)
+        return self.scaler.transform(live_data[self.feature_columns])
+
+    def _validate_features(self, df: pd.DataFrame):
+        """Strict feature validation"""
+        missing = set(self.feature_columns) - set(df.columns)
+        if missing:
+            self.logger.error(f"Missing features: {missing}")
+            raise ValueError(f"Missing {len(missing)} features")
+            
+        if df[self.feature_columns].isna().any().any():
+            self.logger.error("NaN values in features")
+            raise ValueError("Input contains NaN values")
+
     def save_artifacts(self, output_dir: Path):
-        """Save preprocessing state for inference"""
+        """Versioned artifact storage"""
         output_dir.mkdir(exist_ok=True)
-        pd.to_pickle({
+        artifacts = {
             'scaler': self.scaler,
             'feature_columns': self.feature_columns,
-            'prediction_horizon': self.prediction_horizon
-        }, output_dir / 'preprocessor.pkl')
+            'prediction_horizon': self.prediction_horizon,
+            'stock_code': self.stock_code,
+            'feature_prefixes': ('ma_', 'close_ratio_', 'volatility_', 'volume_')
+        }
+        pd.to_pickle(artifacts, output_dir / 'preprocessor.pkl')
         
