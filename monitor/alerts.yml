@@ -1,0 +1,26 @@
+groups:
+  - name: stock-api
+    rules:
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency detected in Stock API"
+          
+      - alert: ModelDrift
+        expr: increase(model_prediction_errors_total[1h]) > 10
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Possible model drift detected in Stock API"
+
+      - alert: PodCrashLoop
+        expr: kube_pod_container_status_restarts_total{container="stock-api"} > 3
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Stock API pod is in a crash loop"
