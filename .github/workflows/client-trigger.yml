@@ -1,0 +1,54 @@
+name: Model Update (On-Demand)
+on:
+  workflow_dispatch:
+    inputs:
+      stock_ticker:
+        description: 'Stock ticker to update'
+        required: true
+      retrain:
+        description: 'Force retrain model'
+        type: boolean
+        default: false
+
+jobs:
+  update-model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+      
+      - name: Check model freshness
+        id: check_model
+        run: |
+          python -c "
+          from datetime import datetime, timedelta
+          from src.dsba.model_registry import ModelRegistry
+          registry = ModelRegistry()
+          try:
+            metadata = registry.load_metadata('${{ inputs.stock_ticker }}')
+            last_train = datetime.fromisoformat(metadata['last_train_date'])
+            stale = (datetime.now() - last_train) > timedelta(days=7)
+            print(f'stale={stale}')
+          except:
+            print('stale=true')
+          " >> $GITHUB_OUTPUT
+
+      - name: Train/Update model
+        if: inputs.retrain || steps.check_model.outputs.stale == 'true'
+        run: |
+          python -m src.dsba.model_training \
+            --stock ${{ inputs.stock_ticker }} \
+            --data-path ./data/processed/${{ inputs.stock_ticker }}.csv \
+            --output-dir ./models
+
+      - name: Deploy to staging
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.STAGING_SERVER }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            docker pull ghcr.io/your-repo/stock-api:latest
+            docker-compose -f /app/docker-compose.yml up -d --no-deps api
