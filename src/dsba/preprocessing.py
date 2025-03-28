@@ -67,6 +67,12 @@ class StockPreprocessor:
             
         df = self._create_target(df)
         splits = self._temporal_split(df)
+
+        split_dates = {
+        'train_dates': splits['train'].index,
+        'test_dates': splits['test'].index,
+        'holdout_dates': splits['holdout'].index
+        }
         
         # Feature selection
         self.feature_columns = [
@@ -85,7 +91,8 @@ class StockPreprocessor:
             'X_holdout': splits['holdout'][self.feature_columns].values,
             'y_holdout': splits['holdout']['target'].values,
             'feature_names': self.feature_columns,
-            'monte_carlo_data': splits['holdout'][['Close', 'Log_Return']]  # Removed Market_State
+            'monte_carlo_data': splits['holdout'][['Close', 'Log_Return']],  # Removed Market_State
+            split_dates
         }
 
     def transform(self, live_data: pd.DataFrame) -> np.ndarray:
