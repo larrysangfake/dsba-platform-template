@@ -84,3 +84,11 @@ class ModelRegistry:
         # Create directory if it doesn't exist
         path.mkdir(parents=True, exist_ok=True)
         return path.resolve()
+
+    def needs_retrain(self, stock_code: str, max_age_days: int = 7) -> bool:
+        try:
+            metadata = self.load_metadata(stock_code)
+            last_train = datetime.fromisoformat(metadata['last_train_date'])
+            return (datetime.now() - last_train).days > max_age_days
+        except:
+            return True
