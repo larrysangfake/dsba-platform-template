@@ -1,4 +1,4 @@
-# 📊 Stock Advisory App
+# 📊 Stock Advisory MLOps Platform
 
 A machine-learning-powered stock advisory platform designed to help stockholders make informed decisions on whether to **hold** or **sell** their stocks.
 
