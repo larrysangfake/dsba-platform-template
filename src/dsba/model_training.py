@@ -25,51 +25,44 @@ class StockModelTrainer:
         self.logger = logging.getLogger(f"trainer.{stock_code}")
 
     def train(self, features_path: Path) -> Dict[str, Any]:
-        """
-        Train with time-series validation
-        Returns basic artifacts without MLflow
-        """
-        # Process data (maintains temporal order)
         processed_data = self.preprocessor.process(features_path)
         
-        # Initialize model (simplified parameters)
         self.model = RandomForestClassifier(
             n_estimators=100,
             max_depth=5,
             class_weight='balanced',
             n_jobs=-1,
-            # No random_state for production
-            max_features=0.3  # Reduce feature randomness
+            max_features=0.3
         )
         
-        # Time-series cross-validation
         tscv = TimeSeriesSplit(n_splits=5)
-        test_preds = []
-        test_dates = []
-        
-        # Walk-forward validation
         X = processed_data['X_train']
         y = processed_data['y_train']
         dates = processed_data['train_dates']
+        
+        # Initialize collectors
+        test_preds = []
+        test_dates = []
+        test_y_true = []
         
         for train_idx, test_idx in tscv.split(X):
             fold_model = clone(self.model)
             fold_model.fit(X[train_idx], y[train_idx])
             test_preds.extend(fold_model.predict_proba(X[test_idx])[:, 1])
             test_dates.extend(dates[test_idx])
+            test_y_true.extend(y[test_idx])  # Collect actual values
         
-        # Final full training
+        # Final training
         self.model.fit(X, y)
         
-        # Prepare outputs
         return {
             'model': self.model,
             'preprocessor': self.preprocessor,
             'validation_results': {
                 'dates': test_dates,
-                'y_true': y[tscv.get_test_indices()],
+                'y_true': test_y_true,  # Use collected values
                 'y_pred': test_preds,
-                'auc': roc_auc_score(y[tscv.get_test_indices()], test_preds)
+                'auc': roc_auc_score(test_y_true, test_preds)
             },
             'metadata': {
                 'stock_code': self.stock_code,
@@ -78,7 +71,7 @@ class StockModelTrainer:
                 'features': processed_data['feature_names']
             }
         }
-
+    
     def save_artifacts(self, artifacts: dict, output_dir: Path):
         """Save minimal required artifacts"""
         output_dir.mkdir(exist_ok=True)
