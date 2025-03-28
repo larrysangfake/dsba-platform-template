@@ -8,6 +8,7 @@ from typing import Dict, Tuple
 
 class StockPreprocessor:
     def __init__(self, 
+                 stock_code: str
                  prediction_horizon: int = 1,  # Predict the next trading day
                  test_size: float = 0.2,
                  holdout_days: int = 30):
@@ -17,6 +18,7 @@ class StockPreprocessor:
             test_size: Fraction of data for validation (excludes holdout)
             holdout_days: Most recent days to reserve for final testing
         """
+        self.stock_code = stock_code
         self.prediction_horizon = prediction_horizon
         self.test_size = test_size
         self.holdout_days = holdout_days
