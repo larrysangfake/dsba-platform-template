@@ -7,69 +7,82 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     f1_score,
-    confusion_matrix
+    roc_auc_score,
+    confusion_matrix,
+    classification_report
 )
 import json
 import logging
 from typing import Dict, Any
+import joblib
 
 class StockModelEvaluator:
     def __init__(self, stock_code: str):
         self.stock_code = stock_code
         self.logger = logging.getLogger(f"evaluator.{stock_code}")
 
-    def _load_test_data(self, model_dir: Path) -> Dict[str, Any]:
-        """Load test data saved during training"""
-        test_data_path = model_dir / f"{self.stock_code}_test_data.csv"
-        if not test_data_path.exists():
-            raise FileNotFoundError(f"Test data missing for {self.stock_code}")
+    def _load_artifacts(self, model_dir: Path) -> Dict[str, Any]:
+        """Load model and preprocessor"""
+        model_path = model_dir / f"{self.stock_code}_model.pkl"
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model file missing for {self.stock_code}")
         
-        test_df = pd.read_csv(test_data_path, parse_dates=['Date'])
+        pipeline = joblib.load(model_path)
         return {
-            'dates': test_df['Date'].values,
-            'y_true': test_df['y_true'].values
+            'model': pipeline['model'],
+            'preprocessor': pipeline['preprocessor']
         }
 
-    def evaluate(self, model_dir: Path, predictions: np.ndarray) -> Dict[str, Any]:
+    def evaluate(self, model_dir: Path, test_data: Dict) -> Dict[str, Any]:
         """
-        Evaluate model performance
+        Evaluate model performance on test set
         
         Args:
-            model_dir: Path containing training artifacts
-            predictions: Model predictions on test data
+            model_dir: Directory containing model artifacts
+            test_data: Preprocessed test data from StockPreprocessor
             
         Returns:
-            Dictionary of evaluation metrics and metadata
+            Dictionary of evaluation metrics
         """
         try:
-            # Load ground truth
-            test_data = self._load_test_data(model_dir)
-            y_true = test_data['y_true']
+            # Load model and preprocessor
+            artifacts = self._load_artifacts(model_dir)
+            model = artifacts['model']
+            
+            # Get predictions
+            X_test = test_data['X_test']
+            y_test = test_data['y_test']
+            test_dates = test_data['test_dates']
+            
+            y_pred = model.predict(X_test)
+            y_pred_proba = model.predict_proba(X_test)[:, 1]
             
             # Calculate metrics
             metrics = {
-                'accuracy': accuracy_score(y_true, predictions),
-                'precision': precision_score(y_true, predictions),
-                'recall': recall_score(y_true, predictions),
-                'f1': f1_score(y_true, predictions),
-                'confusion_matrix': confusion_matrix(y_true, predictions).tolist(),
-                'evaluation_date': pd.Timestamp.now().isoformat(),
+                'accuracy': accuracy_score(y_test, y_pred),
+                'precision': precision_score(y_test, y_pred),
+                'recall': recall_score(y_test, y_pred),
+                'f1': f1_score(y_test, y_pred),
+                'roc_auc': roc_auc_score(y_test, y_pred_proba),
+                'confusion_matrix': confusion_matrix(y_test, y_pred).tolist(),
+                'classification_report': classification_report(y_test, y_pred, output_dict=True),
                 'test_date_range': {
-                    'start': pd.to_datetime(test_data['dates'].min()).strftime('%Y-%m-%d'),
-                    'end': pd.to_datetime(test_data['dates'].max()).strftime('%Y-%m-%d')
-                }
+                    'start': test_dates[0].strftime('%Y-%m-%d'),
+                    'end': test_dates[-1].strftime('%Y-%m-%d')
+                },
+                'evaluation_date': pd.Timestamp.now().isoformat()
             }
             
             # Load training metadata
-            with open(model_dir / f"{self.stock_code}_train_metadata.json") as f:
+            metadata_path = model_dir / f"{self.stock_code}_metadata.json"
+            with open(metadata_path) as f:
                 metadata = json.load(f)
             
-            # Merge with evaluation results
+            # Create full report
             full_report = {
                 'stock_code': self.stock_code,
                 'training_metadata': metadata,
-                'evaluation_metrics': metrics,
-                'model_path': str(model_dir / f"{self.stock_code}_model.pkl")
+                'evaluation_metrics': metrics
             }
             
             # Save evaluation report
@@ -83,22 +96,27 @@ class StockModelEvaluator:
             self.logger.error(f"Evaluation failed for {self.stock_code}: {str(e)}")
             raise
 
-def evaluate_model(stock_code: str, model_dir: Path, predictions: np.ndarray) -> bool:
+def evaluate_model(
+    stock_code: str,
+    model_dir: Path,
+    test_data: Dict
+) -> bool:
     """
     Pipeline integration point
     
     Args:
         stock_code: Stock ticker symbol
         model_dir: Directory containing model artifacts
-        predictions: Model predictions on test data
+        test_data: Preprocessed test data from StockPreprocessor
         
     Returns:
         bool: True if evaluation succeeded
     """
     try:
         evaluator = StockModelEvaluator(stock_code)
-        report = evaluator.evaluate(model_dir, predictions)
-        logging.info(f"Evaluation completed for {stock_code}: {report['evaluation_metrics']}")
+        report = evaluator.evaluate(model_dir, test_data)
+        logging.info(f"Evaluation completed for {stock_code}")
+        logging.info(f"ROC AUC: {report['evaluation_metrics']['roc_auc']:.4f}")
         return True
     except Exception as e:
         logging.error(f"Evaluation failed for {stock_code}: {str(e)}")
