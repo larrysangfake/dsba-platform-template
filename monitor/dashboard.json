@@ -1,0 +1,9 @@
+curl -o monitor/dashboard.json https://raw.githubusercontent.com/grafana/dashboards/main/315/kubernetes-cluster-prometheus.json
+
+# Apply Prometheus configuration
+kubectl apply -f monitor/prometheus_config.yml
+
+# Install Grafana (via Helm or manifest)
+kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/charts/grafana/values.yaml
+
+kubectl port-forward svc/grafana 3000:80
