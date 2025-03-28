@@ -1,129 +1,154 @@
-import json
-import logging
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from dsba.model_registry import list_models_ids, load_model, load_model_metadata
-from dsba.model_prediction import predict_record
-
-class StockAnalysisRequest(BaseModel):
-    company_code: str  # Company name or stock code (e.g., "AAPL")
-    num_shares: int    # Number of shares owned
-    acquisition_price: float  # Price at which shares were acquired
-    min_gain: float    # Minimum acceptable gain (e.g., $X or Y%)
-    expected_gain: float  # Expected average gain (e.g., $Z or W%)
-
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S,",
-)
-
-app = FastAPI()
-
-
-# using FastAPI with defaults is very convenient
-# we just add this "decorator" with the "route" we want.
-# If I deploy this app on "https//mywebsite.com", this function can be called by visiting "https//mywebsite.com/models/"
-@app.get("/models/")
-async def list_models():
-    return list_models_ids()
-
-from fastapi import FastAPI, HTTPException
-import yfinance as yf
-import logging
-from dsba.model_registry import load_model, load_model_metadata
-from dsba.model_prediction import predict_five_day_average  # New function for prediction
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
-
-app = FastAPI()
-
-# Predict stock price and calculate gain
-@app.post("/predict/")
-async def predict(request: StockAnalysisRequest):
-    """
-    Predict the next five working days' average stock price and calculate potential gain.
-    """
-    try:
-        # Fetch historical stock data
-        stock_data = yf.download(request.company_code, period="1mo")  # Last month's data
-        historical_prices = stock_data["Close"].tolist()
-
-        # Load the model and metadata
-        model = load_model("arima_model")  # Example model ID
-        metadata = load_model_metadata("arima_model")
-
-        # Predict the next five working days' average price
-        predicted_avg_price = predict_five_day_average(model, historical_prices, metadata.target_column)
-
-        # Calculate potential gain
-        acquisition_cost = request.num_shares * request.acquisition_price
-        predicted_value = request.num_shares * predicted_avg_price
-        potential_gain = predicted_value - acquisition_cost
-
-        # Compare gain to user expectations
-        if potential_gain >= request.expected_gain:
-            recommendation = "Sell now"
-        elif potential_gain >= request.min_gain:
-            recommendation = "Consider selling"
-        else:
-            recommendation = "Hold"
-
-        # Return the results
-        return {
-            "predicted_avg_price": predicted_avg_price,
-            "potential_gain": potential_gain,
-            "recommendation": recommendation,
-        }
-    except Exception as e:
-        logging.error(f"Error making prediction: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 import pandas as pd
+import numpy as np
+import yfinance as yf
+from src.model_registry import ModelRegistry
+from src.model_prediction import StockPredictionEngine
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+from typing import Optional
 
-def predict_five_day_average(model, historical_prices, target_column):
-    """
-    Predict the next five working days' average stock price.
-    """
-    # Convert historical prices to a DataFrame
-    input_data = pd.DataFrame(historical_prices, columns=["price"])
+app = FastAPI()
 
-    # Preprocess the data (e.g., calculate moving averages)
-    input_data["moving_avg"] = input_data["price"].rolling(window=5).mean()
+# CORS setup for frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    # Make predictions for the next five days
-    predictions = model.predict(input_data[["price", "moving_avg"]])
+class StockRequest(BaseModel):
+    ticker: str
+    cost_basis: float  # Price per share when acquired
+    shares: int
+    min_gain: float  # Minimum acceptable gain (%)
+    expected_gain: float  # Expected average gain (%)
+    lookback_days: Optional[int] = 365  # Historical data period
 
-    # Calculate the average of the next five days' predictions
-    predicted_avg_price = predictions[-5:].mean()
-
-    return predicted_avg_price
-
-
-@app.api_route("/predict/", methods=["GET", "POST"])
-async def predict(query: str, model_id: str):
-    """
-    Predict the target column of a record using a model.
-    The query should be a json string representing a record.
-    """
-    # This function is a bit naive and focuses on the logic.
-    # To make it more production-ready you would want to validate the input, manage authentication,
-    # process the various possible errors and raise an appropriate HTTP exception, etc.
+@app.post("/analyze")
+async def analyze_stock(request: StockRequest):
+    """Main analysis endpoint"""
     try:
-        record = json.loads(query)
-        model = load_model(model_id)
-        metadata = load_model_metadata(model_id)
-        prediction = classify_record(model, record, metadata.target_column)
-        return {"prediction": prediction}
+        # 1. Get market data
+        hist_data = get_historical_data(request.ticker, request.lookback_days)
+        current_price = hist_data['Close'].iloc[-1]
+        
+        # 2. Get model prediction
+        registry = ModelRegistry()
+        pipeline = registry.load_model(request.ticker)
+        predictor = StockPredictionEngine(pipeline['model'], pipeline['preprocessor'])
+        
+        live_features = prepare_features(hist_data)
+        prediction = predictor.predict(live_features)
+        
+        # 3. Monte Carlo Simulation
+        simulations = run_monte_carlo(
+            current_price=current_price,
+            confidence=prediction['confidence'],
+            volatility=hist_data['Log_Return'].std()
+        )
+        
+        # 4. Generate recommendations
+        analysis = generate_recommendation(
+            request=request,
+            current_price=current_price,
+            simulations=simulations,
+            confidence=prediction['confidence']
+        )
+        
+        # 5. Prepare visualization data
+        charts = {
+            "historical": build_historical_chart(hist_data),
+            "monte_carlo": build_monte_carlo_chart(simulations)
+        }
+        
+        return {
+            **analysis,
+            "charts": charts,
+            "timestamp": datetime.now().isoformat()
+        }
+        
     except Exception as e:
-        # We do want users to be able to see the exception message in the response
-        # FastAPI will by default block the Exception and send a 500 status code
-        # (In the HTTP protocol, a 500 status code just means "Internal Server Error" aka "Something went wrong but we're not going to tell you what")
-        # So we raise an HTTPException that contains the same details as the original Exception and FastAPI will send to the client.
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Helper functions
+def get_historical_data(ticker: str, lookback_days: int) -> pd.DataFrame:
+    """Fetch and prepare historical data"""
+    end = datetime.now()
+    start = end - timedelta(days=lookback_days)
+    data = yf.download(ticker, start=start, end=end)
+    data['Log_Return'] = np.log(data['Close'] / data['Close'].shift(1))
+    return data.dropna()
+
+def prepare_features(hist_data: pd.DataFrame) -> pd.DataFrame:
+    """Create features for model prediction"""
+    return pd.DataFrame({
+        'Close': [hist_data['Close'].iloc[-1]],
+        'volatility_30d': hist_data['Log_Return'].rolling(30).std().iloc[-1],
+        # Add other features your model expects
+    })
+
+def run_monte_carlo(current_price: float, confidence: float, volatility: float, 
+                   n_simulations=1000) -> np.ndarray:
+    """Run Monte Carlo simulation"""
+    directions = np.random.choice([1, -1], size=n_simulations, p=[confidence, 1-confidence])
+    magnitudes = np.random.normal(0, volatility, n_simulations)
+    return current_price * (1 + directions * magnitudes)
+
+def generate_recommendation(request: StockRequest, current_price: float, 
+                          simulations: np.ndarray, confidence: float) -> dict:
+    """Core recommendation logic"""
+    # Calculate potential gains
+    potential_gains = (simulations - current_price) * request.shares
+    total_investment = request.cost_basis * request.shares
+    
+    # Probability calculations
+    prob_profit = (simulations > current_price).mean()
+    prob_min_gain = (potential_gains >= request.min_gain/100 * total_investment).mean()
+    prob_expected_gain = (potential_gains >= request.expected_gain/100 * total_investment).mean()
+    
+    # Recommendation logic
+    if prob_expected_gain >= 0.7:
+        action = "strong_hold"
+    elif prob_min_gain >= 0.5:
+        action = "hold"
+    else:
+        action = "consider_selling"
+    
+    return {
+        "current_value": current_price * request.shares,
+        "potential_gain": {
+            "mean": float(np.mean(potential_gains)),
+            "min": float(np.min(potential_gains)),
+            "max": float(np.max(potential_gains)),
+            "prob_profit": float(prob_profit),
+            "prob_min_gain": float(prob_min_gain),
+            "prob_expected_gain": float(prob_expected_gain)
+        },
+        "recommendation": action,
+        "confidence": confidence
+    }
+
+def build_historical_chart(data: pd.DataFrame) -> dict:
+    """Generate historical price chart"""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=data.index, 
+        y=data['Close'],
+        mode='lines',
+        name='Price'
+    ))
+    return fig.to_dict()
+
+def build_monte_carlo_chart(simulations: np.ndarray) -> dict:
+    """Generate Monte Carlo distribution chart"""
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(
+        x=simulations,
+        nbinsx=50,
+        name='Price Distribution'
+    ))
+    return fig.to_dict()
