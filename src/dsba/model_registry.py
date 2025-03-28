@@ -1,69 +1,88 @@
+# model_registry.py
 import joblib
 import json
 import logging
 import os
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
+from datetime import datetime
 from sklearn.base import BaseEstimator
-import hashlib
 
 @dataclass
-class StockModelMetadata:
-    """Extended metadata for stock prediction models"""
-    id: str
+class ModelMetadata:
     stock_code: str
     created_at: str
     algorithm: str
     hyperparameters: Dict[str, Any]
-    target_column: str
-    description: str
+    feature_columns: list[str]
     performance_metrics: Dict[str, float]
-    feature_columns: List[str]
-    train_date_range: Dict[str, str]  # {"start": "2020-01-01", "end": "2023-06-30"}
     prediction_horizon: int
+    last_train_date: str
 
-class StockModelRegistry:
-    def __init__(self, registry_root: Path = Path("models/registry")):
-        self.registry_root = registry_root
-        self.registry_root.mkdir(exist_ok=True)
-    
-    def save_model(self, model: BaseEstimator, metadata: StockModelMetadata):
-        """Stock-aware model saving with versioning"""
-        # Create versioned directory
-        stock_dir = self.registry_root / metadata.stock_code
-        stock_dir.mkdir(exist_ok=True)
+class ModelRegistry:
+    def __init__(self, registry_path: str = None):
+        """
+        Initialize model registry
         
-        version = f"v{len(list(stock_dir.glob('v*'))) + 1}"
-        version_dir = stock_dir / version
-        version_dir.mkdir()
+        Args:
+            registry_path: Optional custom path for model storage
+                         Defaults to STOCK_MODELS_PATH environment variable
+        """
+        self.registry_path = self._get_registry_path(registry_path)
+        self.logger = logging.getLogger("model_registry")
+
+    def save_model(self, model: BaseEstimator, metadata: ModelMetadata) -> None:
+        """Save model and metadata to registry"""
+        model_path = self._get_model_path(metadata.stock_code)
+        metadata_path = self._get_metadata_path(metadata.stock_code)
         
-        # Save artifacts
-        model_path = version_dir / "model.pkl"
-        metadata_path = version_dir / "metadata.json"
+        self.logger.info(f"Saving model for {metadata.stock_code} to {model_path}")
         
+        # Save model and metadata
         joblib.dump(model, model_path)
-        metadata.id = f"{metadata.stock_code}_{version}"
-        
-        with open(metadata_path, 'w') as f:
+        with open(metadata_path, "w") as f:
             json.dump(asdict(metadata), f, indent=2)
-        
-        logging.info(f"Saved {metadata.stock_code} model {version}")
 
-    def load_model(self, stock_code: str, version: str = "latest") -> BaseEstimator:
-        """Load specific model version"""
-        if version == "latest":
-            versions = sorted((self.registry_root / stock_code).glob("v*"))
-            if not versions:
-                raise FileNotFoundError(f"No models found for {stock_code}")
-            version_dir = versions[-1]
+    def load_model(self, stock_code: str) -> BaseEstimator:
+        """Load model from registry"""
+        model_path = self._get_model_path(stock_code)
+        self.logger.info(f"Loading model for {stock_code} from {model_path}")
+        return joblib.load(model_path)
+
+    def load_metadata(self, stock_code: str) -> ModelMetadata:
+        """Load model metadata from registry"""
+        metadata_path = self._get_metadata_path(stock_code)
+        with open(metadata_path, "r") as f:
+            metadata = json.load(f)
+        return ModelMetadata(**metadata)
+
+    def list_models(self) -> list[str]:
+        """List all registered stock models"""
+        model_files = [f for f in os.listdir(self.registry_path) if f.endswith(".pkl")]
+        return [os.path.splitext(f)[0] for f in model_files]
+
+    def _get_model_path(self, stock_code: str) -> Path:
+        """Get full path to model file"""
+        return self.registry_path / f"{stock_code}.pkl"
+
+    def _get_metadata_path(self, stock_code: str) -> Path:
+        """Get full path to metadata file"""
+        return self.registry_path / f"{stock_code}_metadata.json"
+
+    def _get_registry_path(self, custom_path: str = None) -> Path:
+        """Resolve registry directory path"""
+        if custom_path:
+            path = Path(custom_path)
         else:
-            version_dir = self.registry_root / stock_code / version
+            env_path = os.getenv("STOCK_MODELS_PATH")
+            if not env_path:
+                raise ValueError(
+                    "STOCK_MODELS_PATH environment variable not set. "
+                    "Please set it or provide custom registry_path"
+                )
+            path = Path(env_path)
         
-        return joblib.load(version_dir / "model.pkl")
-
-    def get_metadata(self, stock_code: str, version: str) -> StockModelMetadata:
-        """Retrieve model metadata"""
-        metadata_path = self.registry_root / stock_code / version / "metadata.json"
-        with open(metadata_path) as f:
-            return StockModelMetadata(**json.load(f))
+        # Create directory if it doesn't exist
+        path.mkdir(parents=True, exist_ok=True)
+        return path.resolve()
