@@ -1,0 +1,22 @@
+name: CI Pipeline
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+      - run: pip install -e ".[dev]"
+      - run: pytest --cov=src --cov-fail-under=80
+      - uses: codecov/codecov-action@v3
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f src/api/Dockerfile.api -t stock-api .
+      - run: docker run --rm stock-api python -c "import sys; from src.api.app import app; sys.exit(0 if app else 1)"
