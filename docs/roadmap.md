@@ -22,7 +22,7 @@
 - ⏳ REST API Development (May 2025)
 - ⏳ Frontend Dashboard Prototype (June 2025)
 
-**Owner:** @MLDev
+
 
 ---
 
@@ -43,7 +43,7 @@
 - ⏳ Enhanced Monte Carlo Visualization (August 2025)
 - ⏳ Model Performance Dashboard (September 2025)
 
-**Owner:** @DataScienceTeam
+
 
 ---
 
@@ -66,7 +66,7 @@
 - ⏳ Feedback Data Collection System (November 2025)
 - ⏳ Automated Retraining Integration (December 2025)
 
-**Owner:** @MLOpsLead
+
 
 ---
 
