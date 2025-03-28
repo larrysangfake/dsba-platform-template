@@ -52,7 +52,7 @@ def add_features(clean_path: Path) -> Path:
     
     # Save only necessary columns
     keep_cols = [
-        'Close', 'Adj Close', 'Volume', 'Log_Return', 'Market_State',
+        'stock_code', 'Close', 'Adj Close', 'Volume', 'Log_Return', 'Market_State',
         *[f for f in data.columns if f.startswith(('ma_', 'close_ratio_', 'volatility_', 'volume_'))]
     ]
     data[keep_cols].to_csv(features_path)
