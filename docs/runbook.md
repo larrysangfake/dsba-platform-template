@@ -116,9 +116,9 @@ kubectl exec -it <pod-name> -- ls -lh /app/models
 
 | Name        | Role              | Contact Info                                                 |
 | ----------- | ----------------- | ------------------------------------------------------------ |
-| Baichuan Du | ML Engineer       |                                                              |
+| Baichuan Du | ML Engineer       | [baichuan.du@essec.edu](mailto\:baichuan.du@essec.edu)                                                             |
 | Linhui SANG | DevOps Specialist | [larry.sang@student-cs.fr](mailto\:larry.sang@student-cs.fr) |
-| Binong Han  | Support           |                                                              |
+| Binong Han  | Support           | [b00761132@essec.edu](mailto\:b00761132@essec.edu)                                                                |
 
 ---
 
