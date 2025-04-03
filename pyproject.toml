@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 authors = [
-    { name = "Baichuan Du", email = "your@email.com" },
-    { name = "Binong Han", email = "tm1@email.com" },
+    { name = "Baichuan Du", email = "baichuan.du@gmail.com" },
+    { name = "Binong Han", email = "b00761132@gmail.com" },
     { name = "Linhui SANG", email = "larry.sang@student-cs.fr" }
 ]
 
