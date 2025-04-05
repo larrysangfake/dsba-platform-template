@@ -1,5 +1,5 @@
 [project]
-name = "stock-mlops"
+name = "dsba"
 version = "0.1.0"
 description = "Stock prediction MLOps platform for executive compensation decisions"
 readme = "README.md"
