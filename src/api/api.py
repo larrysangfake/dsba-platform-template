@@ -4,8 +4,8 @@ from pydantic import BaseModel
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from src.model_registry import ModelRegistry
-from src.model_prediction import StockPredictionEngine
+from src.dsba.model_registry import ModelRegistry
+from src.dsba.model_prediction import StockPredictionEngine
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from typing import Optional
