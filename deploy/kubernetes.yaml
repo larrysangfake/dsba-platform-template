@@ -22,15 +22,16 @@ spec:
         - name: STOCK_MODELS_PATH  # Define environment variable for the container
           value: "/app/models"
 ---
+# Define the Service resource, which exposes the Deployment to the network
 apiVersion: v1
 kind: Service
 metadata:
   name: stock-api-service
 spec:
-  type: LoadBalancer
+  type: LoadBalancer  # Expose the Service externally using a cloud load balancer
   selector:
-    app: stock-api
+    app: stock-api # This selector routes traffic to the Pods labeled 'app=stock-api'
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 8000
+    - protocol: TCP # The protocol used for communication
+      port: 80  # The port exposed by the Service (external port)
+      targetPort: 8000  # The port on the Pods that the Service forwards traffic to (container port)
