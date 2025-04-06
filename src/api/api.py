@@ -88,7 +88,6 @@ def prepare_features(hist_data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame({
         'Close': [hist_data['Close'].iloc[-1]],
         'volatility_30d': hist_data['Log_Return'].rolling(30).std().iloc[-1],
-        # Add other features your model expects
     })
 
 def run_monte_carlo(current_price: float, confidence: float, volatility: float, 
