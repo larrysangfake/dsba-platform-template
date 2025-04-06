@@ -8,14 +8,6 @@ groups:
           severity: warning
         annotations:
           summary: "High latency detected in Stock API"
-
-      - alert: InputDrift
-        expr: abs(input_feature_mean / baseline_mean - 1) > 0.1
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Possible input data drift detected in Stock API"
           
       - alert: ModelDrift
         expr: increase(model_prediction_errors_total[1h]) > 10
