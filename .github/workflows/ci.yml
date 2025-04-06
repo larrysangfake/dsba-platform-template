@@ -1,22 +1,23 @@
+#April 05 at current stage, without real data or model for now, ci pipeline is not really necessary
 name: CI Pipeline
-on: [push, pull_request]
+on: [push, pull_request] # Trigger the workflow on push or pull request events
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # This test job runs on the latest Ubuntu version
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4 # Checkout the repository code
+      - uses: actions/setup-python@v4 # Set up Python 3.9 environment
         with:
           python-version: "3.9"
-      - run: pip install -e ".[dev]"
-      - run: pytest --cov=src --cov-fail-under=80
-      - uses: codecov/codecov-action@v3
+      - run: pip install -e ".[dev]" # Install development dependencies
+      - run: pytest --cov=src --cov-fail-under=80 # Run tests with coverage and fail if coverage is below 80%
+      - uses: codecov/codecov-action@v3 # Upload coverage report to Codecov
 
   docker:
-    needs: test
-    runs-on: ubuntu-latest
+    needs: test # Ensure the docker job only runs if the test job passes
+    runs-on: ubuntu-latest # Use the latest version of Ubuntu for Docker job
     steps:
-      - uses: actions/checkout@v4
-      - run: docker build -f src/api/Dockerfile.api -t stock-api .
-      - run: docker run --rm stock-api python -c "import sys; from src.api.app import app; sys.exit(0 if app else 1)"
+      - uses: actions/checkout@v4 # Checkout the repository code for Docker
+      - run: docker build -f src/api/Dockerfile.api -t stock-api . # Build the Docker image
+      - run: docker run --rm stock-api python -c "import sys; from src.api.app import app; sys.exit(0 if app else 1)" # Run a quick check to verify the app runs inside the container
