@@ -1,24 +1,25 @@
+# Define the Deployment resource, which manages the Pods
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: stock-api
 spec:
-  replicas: 2
+  replicas: 2 # We want to run two instances (replicas) of this application for redundancy and high availability
   selector:
     matchLabels:
-      app: stock-api
+      app: stock-api  # This selector ensures that the Deployment manages Pods with the label 'app=stock-api'
   template:
     metadata:
       labels:
-        app: stock-api
+        app: stock-api  # Each Pod created by the Deployment will have the label 'app=stock-api'
     spec:
       containers:
-      - name: stock-api
-        image: larrysang/stock-api:latest
+      - name: stock-api  
+        image: larrysang/stock-api:latest  # The Docker image to use for the container (pulled from Docker Hub)
         ports:
         - containerPort: 8000
         env:
-        - name: STOCK_MODELS_PATH
+        - name: STOCK_MODELS_PATH  # Define environment variable for the container
           value: "/app/models"
 ---
 apiVersion: v1
