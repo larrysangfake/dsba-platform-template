@@ -20,4 +20,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4 # Checkout the repository code for Docker
       - run: docker build -f src/api/Dockerfile.api -t stock-api . # Build the Docker image
-      - run: docker run --rm stock-api python -c "import sys; from src.api.app import app; sys.exit(0 if app else 1)" # Run a quick check to verify the app runs inside the container
+      - run: docker run --rm stock-api python -c "import sys; from src.api.api import api; sys.exit(0 if app else 1)" # Run a quick check to verify the app runs inside the container
