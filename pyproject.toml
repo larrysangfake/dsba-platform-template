@@ -64,10 +64,10 @@ omit = [
 ]
 branch = true
 
-#[tool.coverage.report]
-#show_missing = true
-#skip_covered = true
-#fail_under = 80  # Minimum test coverage percentage
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 0  # Set this as 0 temporarily but can be increased to over 80% in the future
 
 [tool.ruff]
 target-version = "py39"
