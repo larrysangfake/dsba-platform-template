@@ -2,7 +2,7 @@ groups:
   - name: stock-api
     rules:
       - alert: HighLatency  #Examine the latency of API
-        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2  #If 95% quantile of average request time with 5 mins is above 2 secs, we activate the alert.        
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 50  #If 95% quantile of average request time with 5 mins is above 50 secs, we activate the alert.        
         for: 5m
         labels:
           severity: warning
