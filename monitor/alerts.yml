@@ -17,14 +17,6 @@ groups:
         annotations:
           summary: "Possible model drift detected in Stock API"
 
-      - alert: PodCrashLoop  #Examine the restart of API
-        expr: kube_pod_container_status_restarts_total{container="stock-api"} > 3  #If the stock API restart over 3 times within 5 mins, we activate the alert.
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Stock API pod is in a crash loop"
-
       - alert: HighFailureRate  #Examine the failure rate of API
         expr: rate(http_request_failures_total[5m]) > 0.05  #If failure frequency is over 5% within 5 mins, we activate the alert.
         for: 5m
